@@ -1,0 +1,3 @@
+﻿LogEntry1
+LogEntry2
+LogEntry3

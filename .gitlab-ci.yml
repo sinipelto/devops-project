@@ -1,0 +1,70 @@
+stages:
+    - build
+    - test
+    - analyze
+    - deploy
+
+build_and_test_run:
+    image: docker/compose:latest
+    services:
+        - docker:dind
+    stage: build
+    variables:
+        TEST_RUN: "True"
+    before_script:
+        - docker info
+        - docker-compose version
+    script:
+        - docker-compose build --no-cache
+        - docker-compose up --abort-on-container-exit
+
+unit-tests:
+    stage: test
+    image: mcr.microsoft.com/dotnet/sdk:3.1
+    script:
+        - dotnet test /p:CollectCoverage=true /p:CoverletOutputFormat=opencover
+    artifacts:
+        paths:
+            - test/**/coverage.opencover.xml
+
+sonarqube:
+    stage: analyze
+    variables:
+        GIT_DEPTH: "0"
+    dependencies:
+        - unit-tests
+    image:
+        name: kapseliboi/dotnet-java:3.1.404-1.4
+        entrypoint: [""]
+    script:
+        - dotnet sonarscanner begin /k:$SONAR_PROJECT_KEY /d:sonar.host.url=$SONAR_HOST_URL
+          /d:sonar.login=$SONAR_TOKEN /o:$SONAR_ORGANIZATION
+          /d:sonar.cs.opencover.reportsPaths=test/**/coverage.opencover.xml /d:sonar.coverage.exclusions=test/*
+          /d:sonar.gitlab.user_token="$GITLAB_ACCESS_TOKEN"
+          /d:sonar.gitlab.project_id=$CI_PROJECT_PATH
+          /d:sonar.gitlab.commit_sha=$CI_COMMIT_SHA
+          /d:sonar.gitlab.ref_name=$CI_COMMIT_REF_NAME
+          /d:sonar.analysis.mode=publish
+          /d:sonar.qualitygate.wait=true
+        - dotnet build
+        - dotnet sonarscanner end /d:sonar.login=$SONAR_TOKEN
+
+deployment:
+    stage: deploy
+    before_script:
+        - apt-get update -qq
+        - apt-get install -qq git
+        # Setup SSH deploy keys
+        - 'which ssh-agent || ( apt-get install -qq openssh-client )'
+        - eval $(ssh-agent -s)
+        - ssh-add <(echo "$SSH_PRIVATE_KEY_B64" | base64 -d)
+        - mkdir -p ~/.ssh
+        - '[[ -f /.dockerenv ]] && echo -e "Host *\n\tStrictHostKeyChecking no\n\tLogLevel ERROR\n\n" > ~/.ssh/config'
+    environment:
+        name: production
+    script:
+        - ssh $SSH_CONNECT -p $SSH_PORT
+          "git clone $REPO_URL; cd devops-project && git checkout master &&
+          git pull origin master && docker-compose down && docker-compose up --build -d && exit"
+    only:
+        - master

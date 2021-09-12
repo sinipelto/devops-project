@@ -1,0 +1,12 @@
+[
+  {
+    "uptime": 479911,
+    "connectionCreated": 3,
+    "connectionClosed": 4,
+    "channelCreated": 3,
+    "channelClosed": 1,
+    "queueDeclared": 2,
+    "queueCreated": 2,
+    "queueDeleted": 0
+  }
+]

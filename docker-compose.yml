@@ -1,0 +1,67 @@
+version: "3.8"
+
+services:
+    apigateway:
+        build:
+            context: src
+            dockerfile: ApiGateway/Dockerfile
+        depends_on:
+            - httpserv
+            - intermediate
+            - observer
+            - original
+            - rabbitmq
+        ports:
+            - 8081:80
+        volumes:
+            - /var/run/docker.sock:/app/docker.sock
+    httpserv:
+        build:
+            context: src
+            dockerfile: HttpServ/Dockerfile
+        ports:
+            - 8080:80
+        volumes:
+            - ./Logs:/Logs
+    intermediate:
+        build:
+            context: src
+            dockerfile: Intermediate/Dockerfile
+        depends_on:
+            - rabbitmq
+        volumes:
+            - ./Scripts:/Scripts
+        entrypoint: bash /Scripts/wait-for-it.sh rabbitmq:5672 -t 30 -- dotnet Intermediate.dll
+    observer:
+        build:
+            context: src
+            dockerfile: Observer/Dockerfile
+        depends_on:
+            - rabbitmq
+        volumes:
+            - ./Logs:/Logs
+            - ./Scripts:/Scripts
+        entrypoint: bash /Scripts/wait-for-it.sh rabbitmq:5672 -t 30 -- dotnet Observer.dll
+    original:
+        build:
+            context: src
+            dockerfile: Original/Dockerfile
+        depends_on:
+            - rabbitmq
+            - intermediate
+            - observer
+        volumes:
+            - ./Scripts:/Scripts
+        environment:
+            TEST_RUN: $TEST_RUN
+        entrypoint: bash /Scripts/wait-for-it.sh rabbitmq:5672 -t 30 -- dotnet Original.dll
+    rabbitmq:
+        image: rabbitmq:3.8.9-management
+    seq:
+        image: datalust/seq:2020.4
+        environment:
+            ACCEPT_EULA: "Y"
+        volumes:
+            - ./seq:/data
+        ports:
+            - 5341:80
